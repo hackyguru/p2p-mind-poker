@@ -7,6 +7,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonParseError>
+#include <QRandomGenerator>
 #include <QTimer>
 #include <QUuid>
 
@@ -72,28 +73,44 @@ bool PokerPlugin::startDelivery()
     }
 
     if (!m_createNodeDone) {
-        // Deterministic Instance-A/B keys + staticNodes so two peers on one box
-        // dial each other directly over loopback (the logos.dev bootstrap peers
-        // don't currently handshake). POKER_TCPPORT unset → A; set → B.
+        // Every node gets a fresh random identity, so any number of machines can
+        // meet through the logos.dev fleet. Two instances on ONE machine can't
+        // rely on that alone, so POKER_INSTANCE=A|B switches to fixed keys and
+        // makes each dial the other directly over loopback. POKER_TCPPORT only
+        // moves the P2P ports (B defaults to 60001 so it doesn't collide with A).
+        const QString instance = qEnvironmentVariable("POKER_INSTANCE").trimmed().toUpper();
+        const bool isInstanceA = (instance == "A");
+        const bool isInstanceB = (instance == "B");
         const int  customPort  = qEnvironmentVariableIntValue("POKER_TCPPORT");
-        const bool isInstanceB = (customPort > 0);
-        const int  tcpPort     = isInstanceB ? customPort : 60000;
-        const int  udpPort     = isInstanceB ? 9000 + (tcpPort - 60000) : 9000;
+        const int  tcpPort     = customPort > 0 ? customPort : (isInstanceB ? 60001 : 60000);
+        const int  udpPort     = 9000 + (tcpPort - 60000);
 
         static const QString KEY_A    = "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20";
         static const QString KEY_B    = "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f21";
-        static const QString PEERID_A = "16Uiu2HAm4Ms862Gnqafssgvik4JJ1LuqWMcKNipq4nm2UaoLRbeP";
         // PEERID_A/B are the libp2p identities delivery_module derives from the
         // nodeKeys above. Verified against a live run: instance A announces
-        // …oLRbeP and instance B announces …u8AMiG. (The value part6 carries for
-        // B is stale — dialing it fails the noise handshake, so only B→A ever
-        // connected and the pair depended on B starting second.)
+        // …oLRbeP and instance B announces …u8AMiG.
+        static const QString PEERID_A = "16Uiu2HAm4Ms862Gnqafssgvik4JJ1LuqWMcKNipq4nm2UaoLRbeP";
         static const QString PEERID_B = "16Uiu2HAmKCaJ7sfcm1aHY8TAShdsKttUHvDwTPbgTkJhLQu8AMiG";
 
-        const QString nodeKey = isInstanceB ? KEY_B : KEY_A;
-        const QString peerMultiAddr = isInstanceB
-            ? QString("/ip4/127.0.0.1/tcp/60000/p2p/%1").arg(PEERID_A)
-            : QString("/ip4/127.0.0.1/tcp/60001/p2p/%1").arg(PEERID_B);
+        QString nodeKey;
+        QJsonArray staticNodes;
+        if (isInstanceA) {
+            nodeKey = KEY_A;
+            staticNodes.append(QString("/ip4/127.0.0.1/tcp/60001/p2p/%1").arg(PEERID_B));
+        } else if (isInstanceB) {
+            nodeKey = KEY_B;
+            staticNodes.append(QString("/ip4/127.0.0.1/tcp/60000/p2p/%1").arg(PEERID_A));
+        } else {
+            // A shared fixed key made every machine the same libp2p peer, so the
+            // fleet couldn't route between them. 256 random bits is a valid
+            // secp256k1 secret with overwhelming probability.
+            QByteArray raw(32, Qt::Uninitialized);
+            QRandomGenerator::system()->fillRange(reinterpret_cast<quint32*>(raw.data()), 8);
+            nodeKey = QString::fromLatin1(raw.toHex());
+        }
+        qDebug() << "PokerPlugin: node mode" << (isInstanceA ? "local-A" : isInstanceB ? "local-B" : "network")
+                 << "tcpPort" << tcpPort;
 
         QJsonObject cfgObj;
         cfgObj["logLevel"]      = "INFO";
@@ -103,7 +120,7 @@ bool PokerPlugin::startDelivery()
         cfgObj["tcpPort"]       = tcpPort;
         cfgObj["discv5UdpPort"] = udpPort;
         cfgObj["nodeKey"]       = nodeKey;
-        cfgObj["staticNodes"]   = QJsonArray{ peerMultiAddr };
+        if (!staticNodes.isEmpty()) cfgObj["staticNodes"] = staticNodes;
 
         const QString cfg = QString::fromUtf8(QJsonDocument(cfgObj).toJson(QJsonDocument::Compact));
         if (!invokeBool("createNode", "createNode", cfg)) { setDeliveryStatus(3); return false; }

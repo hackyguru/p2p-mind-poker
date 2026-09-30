@@ -65,5 +65,5 @@ chmod -R u+w "$DEST"
 ls "$DEST" | sed 's/^/    /'
 
 echo "==> Done. Launch two peers with:"
-echo "    open -n /Applications/LogosBasecamp.app"
-echo "    POKER_TCPPORT=60001 open -n /Applications/LogosBasecamp.app"
+echo "    POKER_INSTANCE=A /Applications/LogosBasecamp.app/Contents/MacOS/LogosBasecamp &"
+echo "    POKER_INSTANCE=B /Applications/LogosBasecamp.app/Contents/MacOS/LogosBasecamp &"

@@ -34,6 +34,7 @@ cards stay secret and nobody controls the shuffle.
 - [How it works](#how-it-works)
 - [Quick start](#quick-start)
 - [Build from source](#build-from-source)
+- [Play across computers](#play-across-computers)
 - [Run two peers on one machine](#run-two-peers-on-one-machine)
 - [Testing](#testing)
 - [Status & limitations](#status--limitations)
@@ -162,11 +163,25 @@ three steps that are easy to miss by hand:
 - **It copies the package's `assets/` directory.** Without it the sidebar icon
   falls back to a two-letter text tile.
 
+## Play across computers
+
+Install the modules on each computer and open Basecamp normally. Every node
+starts with a fresh random identity and joins the `logos.dev` network, where the
+players find each other through the Logos fleet nodes. Nothing else needs
+configuring.
+
+> [!NOTE]
+> Up to v0.2.0 every node used the same built-in key, so two computers showed
+> up as one libp2p peer and never saw each other. Use a build newer than v0.2.0
+> for games across computers.
+
 ## Run two peers on one machine
 
-Poker needs at least two players. Two instances on one Mac only clash on P2P
-ports, so the core reads `POKER_TCPPORT` and uses fixed Instance-A/B node keys
-so that the two instances dial each other over loopback.
+Poker needs at least two players. Two instances on one Mac clash on their P2P
+ports, and each would have to find the other through the fleet.
+`POKER_INSTANCE=A` / `POKER_INSTANCE=B` switches to fixed node keys, and the two
+instances dial each other directly over loopback. Instance B uses ports
+60001/9001. `POKER_TCPPORT` on its own only moves the ports.
 
 `open` doesn't pass environment variables to the app, so launch the bundle's
 wrapper script directly:
@@ -174,11 +189,11 @@ wrapper script directly:
 ```bash
 BC=/Applications/LogosBasecamp.app/Contents/MacOS/LogosBasecamp
 
-# Instance A: default ports (60000 TCP / 9000 UDP)
-"$BC" > /tmp/peerA.log 2>&1 &
+# Instance A: ports 60000 TCP / 9000 UDP
+POKER_INSTANCE=A "$BC" > /tmp/peerA.log 2>&1 &
 
 # Instance B: ports 60001 / 9001. Give A a few seconds to start first.
-POKER_TCPPORT=60001 "$BC" > /tmp/peerB.log 2>&1 &
+POKER_INSTANCE=B "$BC" > /tmp/peerB.log 2>&1 &
 ```
 
 Then, in **each** instance:
@@ -242,8 +257,9 @@ Known limitations:
   peer missed messages.
 - **Crypto cost.** Each player does a few hundred 2048-bit modular
   exponentiations per hand. That's fine for a demo.
-- **Two-peer setup is local only.** The fixed node keys and static peers target
-  two instances on one machine.
+- **Games across computers are untested.** Nodes now get their own identities
+  and should meet through the `logos.dev` fleet, but a game between two
+  machines hasn't been observed yet.
 
 ## Lessons learned
 
