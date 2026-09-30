@@ -217,8 +217,8 @@ checks that:
 
 | | |
 |---|---|
-| ✅ **Working** | Both modules build, install and load in Basecamp 0.2.3 (macOS arm64). Two peers connect, see each other at the table and start a hand. The offline harness passes for 2, 3 and 6 players. |
-| ⏳ **Not yet observed** | A complete hand played through to showdown across two GUI instances. |
+| ✅ **Working** | Both modules build, install and load in Basecamp 0.2.3 (macOS arm64). Two instances connect, sit at the table and play a full hand through the encrypted shuffle, deal, betting and showdown, and agree on the winner. The offline harness passes for 2, 3 and 6 players. |
+| ⏳ **Not yet observed** | Games with three or more GUI instances, and leaving mid-hand (auto-fold). |
 
 Known limitations:
 
