@@ -63,6 +63,7 @@ public:
     Q_INVOKABLE int  deliveryStatus() override;
 
     Q_INVOKABLE bool    joinTable(const QString& name) override;
+    Q_INVOKABLE bool    leaveTable() override;
     Q_INVOKABLE bool    startHand() override;
     Q_INVOKABLE bool    act(const QString& kind, int amount) override;
     Q_INVOKABLE QString tableState() override;
@@ -101,7 +102,12 @@ private:
     void    publish(QJsonObject obj);      // stamps mid, dedups self-echo, defers send
     void    sendKey(int pos);
     void    announceJoin();                // (re)broadcast our seat — joins are fire-and-forget
+    void    finishLeave();                 // broadcast "leave" and drop our seat
+    void    maybeAutoFold();               // leaving mid-hand: fold whenever it's our turn
+    void    onHandFinished();              // tidy seats + complete a pending leave
+    bool    midHand() const { return m_proto != Proto::Lobby && m_proto != Proto::Done; }
     QString midNext();
+    static quint64 midSeq(const QJsonObject& o);   // sender's counter from "mid"
 
     // NB: do NOT redeclare `logosAPI` here. PluginInterface already provides a
     // public `LogosAPI* logosAPI` and the host reads *that* member to decide
@@ -125,6 +131,8 @@ private:
     QSet<QString>    m_seen;            // seen message ids (dedup)
     QMap<QString, QString> m_joined;    // id -> display name
     QTimer*          m_announceTimer = nullptr;  // periodic join re-broadcast
+    bool             m_leaving       = false;    // left mid-hand; auto-folding until it ends
+    QMap<QString, quint64> m_leftAt;              // id -> seq of its last "leave"
 
     // current hand
     enum class Proto { Lobby, Shuffle, Lock, Deal, Play, Done };

@@ -93,7 +93,7 @@ cryptographic privilege.
 
 | Step | What happens |
 |---|---|
-| **1. Join** | Peers announce `{type:"join"}` and sit down with 1000 play-money chips. Joins are re-sent every 5 s. |
+| **1. Join** | Peers announce `{type:"join"}` and sit down with 1000 play-money chips. Joins are re-sent every 5 s; `{type:"leave"}` gives the seat up. |
 | **2. Start** | The coordinator broadcasts the players, chip counts and dealer button. Everyone generates fresh keys. |
 | **3. Shuffle** | Each player in turn encrypts all 52 cards with a whole-deck key and shuffles. Afterwards nobody knows the order. |
 | **4. Lock** | Each player removes their whole-deck key and re-encrypts every *position* with its own per-card key. |
@@ -184,6 +184,11 @@ Then, in **each** instance:
 The shuffle takes a few seconds, then your cards appear and you can bet from the
 action bar when it's your turn.
 
+To stop playing, press **Leave table**. During a hand the button reads **Leave
+after hand**: the other players still need your decryption keys to reveal the
+board, so your client stays in, folds automatically at each of your turns, and
+gives up the seat as soon as the hand ends. **Stay** cancels it.
+
 > [!TIP]
 > To check that the peers found each other, run
 > `grep -c "relay message" /tmp/peerA.log /tmp/peerB.log`. Between runs, clear
@@ -222,8 +227,8 @@ Known limitations:
   shuffle. The model assumes honest-but-curious peers who follow the protocol.
   A production version would need a verifiable shuffle.
 - **No recovery from lost messages or dropped players.** If a message is lost or
-  a peer disconnects mid-hand, the hand stalls. There are no timeouts or resends
-  yet.
+  a peer quits Basecamp mid-hand, the hand stalls. There are no timeouts or
+  resends yet. (Pressing **Leave table** is safe: it folds you out first.)
 - **Simplified betting.** One main pot and no side pots. A short stack goes
   all-in and stays eligible for the whole pot. Blinds are fixed at 5/10 and the
   button rotates.

@@ -125,14 +125,14 @@ Item {
         // ── Join / lobby ──
         Rectangle {
             Layout.fillWidth: true
-            Layout.preferredHeight: joinedView.visible ? 56 : 56
+            Layout.preferredHeight: 56
             radius: 10
             color: Qt.rgba(1,1,1,0.12)
 
             // Not joined yet → name + Join.
             RowLayout {
                 anchors.fill: parent; anchors.margins: 10; spacing: 10
-                visible: !(st.joined === true)
+                visible: !(st.joined === true) && !(st.leaving === true)
                 TextField {
                     id: nameField
                     Layout.fillWidth: true
@@ -166,6 +166,26 @@ Item {
                             && (st.proto === "lobby" || st.proto === "done")
                     text: "Deal hand"
                     onClicked: { callPoker("startHand"); refresh() }
+                }
+                Button {
+                    readonly property bool inHand: st.proto !== "lobby" && st.proto !== "done"
+                    text: inHand ? "Leave after hand" : "Leave table"
+                    onClicked: { callPoker("leaveTable"); refresh() }
+                }
+            }
+
+            // Left mid-hand → the core folds us out, then gives up the seat.
+            RowLayout {
+                anchors.fill: parent; anchors.margins: 10; spacing: 10
+                visible: st.leaving === true
+                Text {
+                    Layout.fillWidth: true
+                    color: "white"; font.pixelSize: 14
+                    text: "Leaving after this hand — folding automatically…"
+                }
+                Button {
+                    text: "Stay"
+                    onClicked: { callPokerArgs("joinTable", [st.myName || ""]) }
                 }
             }
         }

@@ -29,6 +29,14 @@ void PokerTable::setChips(const std::string& id, long chips)
     if (idx >= 0) m_seats[idx].chips = chips;
 }
 
+void PokerTable::removeSeat(const std::string& id)
+{
+    const int idx = seatIndex(id);
+    if (idx < 0) return;
+    m_seats.erase(m_seats.begin() + idx);
+    if (m_button >= seatCount()) m_button = 0;
+}
+
 int PokerTable::seatIndex(const std::string& id) const
 {
     for (int i = 0; i < seatCount(); ++i)

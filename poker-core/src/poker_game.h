@@ -43,6 +43,7 @@ public:
     // ── Membership ──
     void upsertSeat(const std::string& id, const std::string& name);
     void setChips(const std::string& id, long chips); // authoritative sync at hand start
+    void removeSeat(const std::string& id);           // between hands only — shifts indices
     int  seatIndex(const std::string& id) const;     // -1 if absent
     int  seatCount() const { return static_cast<int>(m_seats.size()); }
     const std::vector<Seat>& seats() const { return m_seats; }

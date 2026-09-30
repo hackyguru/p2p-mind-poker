@@ -171,8 +171,10 @@ bool PokerPlugin::joinTable(const QString& name)
     m_myName = name.trimmed().isEmpty() ? ("Player-" + m_myId.left(4)) : name.trimmed();
     if (!m_started && !startDelivery()) return false;
 
+    m_leaving = false;   // re-joining before the hand ended cancels a pending leave
     m_joined.insert(m_myId, m_myName);
-    m_table.upsertSeat(m_myId.toStdString(), m_myName.toStdString());
+    if (!midHand() || m_table.seatIndex(m_myId.toStdString()) >= 0)
+        m_table.upsertSeat(m_myId.toStdString(), m_myName.toStdString());
 
     announceJoin();
 
@@ -189,6 +191,59 @@ bool PokerPlugin::joinTable(const QString& name)
 
     emit eventResponse("tableChanged", {});
     return true;
+}
+
+bool PokerPlugin::leaveTable()
+{
+    if (!m_joined.contains(m_myId) && !m_leaving) return false;
+
+    if (m_announceTimer) m_announceTimer->stop();
+    m_joined.remove(m_myId);
+
+    // The others still need our key shares for the board and the showdown, so a
+    // hand we're dealt into can't just lose us. Stay in it, fold at every turn,
+    // and only announce the leave once it's over.
+    if (midHand() && m_mySeat >= 0) {
+        m_leaving = true;
+        maybeAutoFold();
+    } else {
+        finishLeave();
+    }
+    emit eventResponse("tableChanged", {});
+    return true;
+}
+
+void PokerPlugin::finishLeave()
+{
+    m_leaving = false;
+    QJsonObject o;
+    o["type"] = "leave";
+    o["id"]   = m_myId;
+    publish(o);
+    m_table.removeSeat(m_myId.toStdString());
+}
+
+void PokerPlugin::maybeAutoFold()
+{
+    if (!m_leaving || m_proto != Proto::Play) return;
+    const int idx = m_table.seatIndex(m_myId.toStdString());
+    if (idx < 0 || idx != m_table.toAct()) return;
+    // Deferred: we're usually inside progressProtocol, which act() re-enters.
+    QTimer::singleShot(0, this, [this]() {
+        if (m_leaving) act("fold", 0);
+    });
+}
+
+void PokerPlugin::onHandFinished()
+{
+    // Players who left during the hand kept their seat until now.
+    std::vector<std::string> gone;
+    for (const Seat& st : m_table.seats())
+        if (!m_joined.contains(QString::fromStdString(st.id)) && st.id != m_myId.toStdString())
+            gone.push_back(st.id);
+    for (const std::string& id : gone) m_table.removeSeat(id);
+
+    if (m_leaving) finishLeave();
 }
 
 void PokerPlugin::announceJoin()
@@ -303,16 +358,30 @@ void PokerPlugin::onMessage(const QJsonObject& o)
     if (type == "join") {
         const QString id   = o.value("id").toString();
         const QString name = o.value("name").toString();
+        // Relay reorders, so a join sent before a leave can arrive after it.
+        if (!id.isEmpty() && midSeq(o) <= m_leftAt.value(id, 0)) return;
         if (!id.isEmpty()) {
             const bool isNew = !m_joined.contains(id);
             m_joined.insert(id, name);
             // A new seat re-sorts the table and would shift toAct/button indices
             // mid-hand; newcomers get seated when the next hand is adopted.
-            const bool midHand = m_proto != Proto::Lobby && m_proto != Proto::Done;
-            if (!isNew || !midHand)
+            const bool seated = m_table.seatIndex(id.toStdString()) >= 0;
+            if (seated || !midHand())
                 m_table.upsertSeat(id.toStdString(), name.toStdString());
             // Greet a newcomer right away so they don't wait for our next heartbeat.
             if (isNew && id != m_myId && m_joined.contains(m_myId)) announceJoin();
+        }
+        emit eventResponse("tableChanged", {});
+        return;
+    }
+
+    if (type == "leave") {
+        const QString id = o.value("id").toString();
+        if (!id.isEmpty() && id != m_myId) {
+            m_leftAt[id] = std::max(m_leftAt.value(id, 0), midSeq(o));
+            m_joined.remove(id);
+            // Mid-hand the seat stays until onHandFinished; the leaver folds out.
+            if (!midHand()) m_table.removeSeat(id.toStdString());
         }
         emit eventResponse("tableChanged", {});
         return;
@@ -371,6 +440,16 @@ void PokerPlugin::adoptHand(const QJsonObject& o)
     m_participants.clear();
     const QJsonArray pj = o.value("players").toArray();
     const QJsonArray cj = o.value("chips").toArray();
+
+    // Deal exactly the players in the start message: startHand() seats everyone
+    // on the table, and the button is an index into this list, so a seat only we
+    // know about would put us out of step with every other peer.
+    QSet<QString> inStart;
+    for (const QJsonValue& v : pj) inStart.insert(v.toString());
+    std::vector<std::string> extra;
+    for (const Seat& st : m_table.seats())
+        if (!inStart.contains(QString::fromStdString(st.id))) extra.push_back(st.id);
+    for (const std::string& id : extra) m_table.removeSeat(id);
     for (int i = 0; i < pj.size(); ++i) {
         const QString id = pj[i].toString();
         m_participants.append(id);
@@ -381,6 +460,9 @@ void PokerPlugin::adoptHand(const QJsonObject& o)
     }
     m_N      = m_participants.size();
     m_mySeat = m_participants.indexOf(m_myId);
+    // Dealt in after we'd already left (the start overtook our leave): play it
+    // out folding, then leave again.
+    if (m_mySeat >= 0 && !m_joined.contains(m_myId)) m_leaving = true;
 
     m_keys = std::make_unique<SraKeyset>();
     m_deck = SraKeyset::cardCodes();          // plaintext codes — seat 0 encrypts first
@@ -469,6 +551,7 @@ void PokerPlugin::progressProtocol()
     if (m_proto == Proto::Play) {
         decodeMyHoles();
         handleBetting();
+        maybeAutoFold();
     }
 }
 
@@ -658,6 +741,7 @@ void PokerPlugin::tryShowdown()
     m_table.endHand(winners);
     m_proto = Proto::Done;
     m_handResolved = true;
+    onHandFinished();
     emit eventResponse("tableChanged", {});
 }
 
@@ -673,6 +757,7 @@ void PokerPlugin::resolveByFold()
     m_table.endHand(winners);
     m_proto = Proto::Done;
     m_handResolved = true;
+    onHandFinished();
     emit eventResponse("tableChanged", {});
 }
 
@@ -726,6 +811,7 @@ QString PokerPlugin::tableState()
     st["myId"]    = m_myId;
     st["myName"]  = m_myName;
     st["joined"]  = m_joined.contains(m_myId);
+    st["leaving"] = m_leaving;
     st["players"] = m_joined.size();
 
     QStringList sorted = m_joined.keys();
@@ -801,6 +887,13 @@ QString PokerPlugin::tableState()
 }
 
 // ── messaging helpers ────────────────────────────────────────────────────────
+
+quint64 PokerPlugin::midSeq(const QJsonObject& o)
+{
+    // mid = "<sender id>:<counter>"; the counter only ever grows per sender.
+    const QString mid = o.value("mid").toString();
+    return mid.mid(mid.lastIndexOf(':') + 1).toULongLong();
+}
 
 QString PokerPlugin::midNext()
 {

@@ -17,6 +17,7 @@ public:
 
     // Table actions
     Q_INVOKABLE virtual bool    joinTable(const QString& name) = 0;   // announce + claim a seat
+    Q_INVOKABLE virtual bool    leaveTable() = 0;                     // give up the seat (after the current hand)
     Q_INVOKABLE virtual bool    startHand() = 0;                      // coordinator only
     Q_INVOKABLE virtual bool    act(const QString& kind, int amount) = 0; // fold/check/call/raise
     Q_INVOKABLE virtual QString tableState() = 0;                     // JSON snapshot for the UI
