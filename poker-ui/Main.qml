@@ -351,7 +351,10 @@ Item {
             // Wooden rail.
             Rectangle {
                 id: rail
-                width: Math.min(tableRegion.width * 0.78, tableRegion.height * 0.64 * 1.9)
+                // Leave room outside the rail for the seats (cards + name plate).
+                width: Math.max(320, Math.min(tableRegion.width - 190,
+                                              (tableRegion.height - 250) * 1.9,
+                                              tableRegion.height * 0.64 * 1.9))
                 height: width / 1.9
                 anchors.horizontalCenter: parent.horizontalCenter
                 anchors.verticalCenter: parent.verticalCenter
@@ -490,11 +493,12 @@ Item {
                     readonly property real angle: Math.PI / 2 + 2 * Math.PI * (index - root.myIndex) / n
                     readonly property real cx: rail.x + rail.width / 2
                     readonly property real cy: rail.y + rail.height / 2
-                    readonly property real px: cx + Math.cos(angle) * (rail.width / 2 + 4)
-                    readonly property real py: cy + Math.sin(angle) * (rail.height / 2 + 6)
+                    // Seats sit just outside the rail so they never cover the board.
+                    readonly property real px: cx + Math.cos(angle) * (rail.width / 2 + 22)
+                    readonly property real py: cy + Math.sin(angle) * (rail.height / 2 + 44)
                     readonly property bool dealtIn: (seat.inHand && root.inHandPhase)
                                                     || (!!seat.hole && seat.hole.length === 2)
-                    width: 150; height: 118
+                    width: 170; height: 118
                     x: px - width / 2
                     y: py - height / 2
                     z: 2
@@ -531,7 +535,7 @@ Item {
                     Rectangle {
                         anchors.horizontalCenter: parent.horizontalCenter
                         anchors.bottom: parent.bottom
-                        width: 144; height: 52; radius: 26
+                        width: 164; height: 52; radius: 26
                         color: root.cPlate
                         opacity: seatItem.seat.folded ? 0.55 : 1.0
                         border.width: seatItem.seat.isToAct ? 3 : (seatItem.seat.isMe ? 2 : 1)
@@ -570,7 +574,7 @@ Item {
 
                         // Dealer button.
                         Rectangle {
-                            visible: seatItem.seat.isButton
+                            visible: !!seatItem.seat.isButton
                             anchors.right: parent.right; anchors.top: parent.top
                             anchors.rightMargin: -6; anchors.topMargin: -8
                             width: 22; height: 22; radius: 11
