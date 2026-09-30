@@ -460,6 +460,10 @@ void PokerPlugin::onMessage(const QJsonObject& o)
     // 27 KB shuffle can overtake the small "start" that precedes it — so park
     // messages for a hand we haven't adopted yet and replay them in adoptHand.
     const QString hid = o.value("handId").toString();
+    if (hid != m_handId && type == "shuffle" && o.value("start").isObject()
+        && !hid.isEmpty() && !m_pastHands.contains(hid)) {
+        adoptHand(o.value("start").toObject());   // the start itself never reached us
+    }
     if (hid != m_handId) {
         if (!hid.isEmpty() && !m_pastHands.contains(hid) && m_early.size() < 2000)
             m_early.append(o);
@@ -503,6 +507,8 @@ void PokerPlugin::adoptHand(const QJsonObject& o)
 
     m_handId = o.value("handId").toString();
     m_pastHands.insert(m_handId);
+    m_startMsg = o;
+    m_startMsg.remove("mid");
     m_handStartChips.clear();
     m_notice.clear();
     m_lastProgress = QDateTime::currentMSecsSinceEpoch();
@@ -649,6 +655,10 @@ void PokerPlugin::performMyShuffleStep()
     o["handId"] = m_handId;
     o["step"]   = m_mySeat;
     o["deck"]   = deckToJson(enc);
+    // Seat 0 is the coordinator. Across the fleet its small "start" has gone
+    // missing while this shuffle arrived (even on resend), so carry the start
+    // here too: a peer that never saw it can adopt the hand from this.
+    if (m_mySeat == 0 && !m_startMsg.isEmpty()) o["start"] = m_startMsg;
     publish(o);
 }
 
@@ -992,13 +1002,22 @@ void PokerPlugin::republish(const QJsonObject& obj)
 {
     const QString payload = QString::fromUtf8(QJsonDocument(obj).toJson(QJsonDocument::Compact));
 
-    // Defer the send: publish() is frequently called from inside the
+    // Queue rather than send: publish() is often called from inside the
     // messageReceived handler, and invoking delivery_module synchronously from
-    // there re-enters it and deadlocks (delivery-guide Gotcha #9).
-    QTimer::singleShot(0, this, [this, payload]() {
-        if (m_deliveryClient)
-            m_deliveryClient->invokeRemoteMethod("delivery_module", "send", TOPIC, payload);
-    });
+    // there re-enters it and deadlocks (delivery-guide Gotcha #9). The pump also
+    // spaces messages out — back-to-back sends are where "start" kept vanishing.
+    m_sendQueue.append(payload);
+    if (!m_sendPump) {
+        m_sendPump = new QTimer(this);
+        m_sendPump->setInterval(120);
+        connect(m_sendPump, &QTimer::timeout, this, [this]() {
+            if (m_sendQueue.isEmpty()) { m_sendPump->stop(); return; }
+            const QString next = m_sendQueue.takeFirst();
+            if (m_deliveryClient)
+                m_deliveryClient->invokeRemoteMethod("delivery_module", "send", TOPIC, next);
+        });
+    }
+    if (!m_sendPump->isActive()) m_sendPump->start();
 }
 
 QStringList PokerPlugin::livePlayers() const

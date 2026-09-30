@@ -137,6 +137,8 @@ private:
     QMap<QString, QString> m_joined;    // id -> display name
     QTimer*          m_announceTimer = nullptr;  // periodic join re-broadcast
     QTimer*          m_watchdog      = nullptr;  // stall detection + seat liveness
+    QTimer*          m_sendPump      = nullptr;  // drains m_sendQueue one message at a time
+    QStringList      m_sendQueue;                // payloads waiting to go to delivery_module
     QHash<QString, qint64> m_lastHeard;          // id -> ms of its last message
     QString          m_notice;                   // shown in the lobby, e.g. why a hand was abandoned
     bool             m_leaving       = false;    // left mid-hand; auto-folding until it ends
@@ -149,6 +151,7 @@ private:
     QSet<QString>                  m_pastHands;      // hands already adopted
     QList<QJsonObject>             m_early;          // messages that overtook their "start"
     QList<QJsonObject>             m_outbox;         // everything we sent for this hand, for resends
+    QJsonObject                    m_startMsg;       // this hand's start, echoed in the coordinator's first shuffle
     QMap<QString, long>            m_handStartChips; // stacks from the start message, for refunds
     qint64                         m_lastProgress = 0;
     qint64                         m_lastResend   = 0;
