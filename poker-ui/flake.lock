@@ -34505,11 +34505,11 @@
       },
       "locked": {
         "dir": "poker-core",
-        "lastModified": 1790787990,
-        "narHash": "sha256-RpulGVBz4WFKPxHj/r8UKGt8cFb6eWMCTxWViQ/kcbQ=",
+        "lastModified": 1790788328,
+        "narHash": "sha256-qiNe0slFiKCVuBdfirdqwTVvdJHcWXh2Ms2STwPmSzA=",
         "owner": "hackyguru",
         "repo": "p2p-mind-poker",
-        "rev": "dd393c7cd0d2caf2e13771cd40a0ba0e9fe1049b",
+        "rev": "63ea792980bf6aa1e4dbdaa1e6c73da47412abe6",
         "type": "github"
       },
       "original": {
