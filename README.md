@@ -6,22 +6,25 @@
 
 **Trustless Texas Hold'em, peer to peer. No server, no dealer, no one to trust.**
 
-A [Logos Basecamp](https://logos.co) module that deals poker over
+A community-built, **unofficial** [Logos Basecamp](https://logos.co) module that deals poker over
 `logos-delivery` using *mental poker* cryptography, so that every player's hole
 cards stay secret and nobody controls the shuffle.
 
 ![Basecamp](https://img.shields.io/badge/Logos%20Basecamp-0.2.3-2e7d5b)
 ![Platform](https://img.shields.io/badge/platform-macOS%20arm64-lightgrey)
 ![Status](https://img.shields.io/badge/status-experimental-orange)
+![Unofficial](https://img.shields.io/badge/module-unofficial-red)
 ![Chips](https://img.shields.io/badge/chips-play%20money%20only-blue)
 ![Licence](https://img.shields.io/badge/licence-MIT%20%2F%20Apache--2.0-green)
 
 </div>
 
 > [!WARNING]
-> **Experimental software, play money only.** This is an unaudited demo. It
-> comes with no warranty of any kind, and the authors accept no responsibility
-> for anything that results from using it. See the [Disclaimer](#disclaimer).
+> **Unofficial, experimental software, play money only.** This is not an
+> official Logos module and is not affiliated with, endorsed by or supported by
+> Logos, IFT or any of their projects. It is an unaudited demo with no warranty
+> of any kind, and the authors accept no responsibility for anything that
+> results from using it. See the [Disclaimer](#disclaimer).
 
 ---
 
@@ -277,6 +280,11 @@ is"**, without warranty of any kind, express or implied, including but not
 limited to the warranties of merchantability, fitness for a particular purpose,
 security and non-infringement.
 
+- **Not an official module.** This is an independent community project. It is
+  not an official Logos module and is not affiliated with, endorsed, reviewed or
+  supported by Logos, the Institute of Free Technology (IFT) or any of their
+  projects or contributors. "Logos", "Basecamp" and related names belong to
+  their respective owners and are used here only to describe compatibility.
 - **Play money only.** The chips in this game have no value. The software is
   not designed, tested or intended for gambling with real money, cryptocurrency
   or anything else of value, and must not be used that way.
