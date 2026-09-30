@@ -109,18 +109,41 @@ bool PokerPlugin::startDelivery()
             QRandomGenerator::system()->fillRange(reinterpret_cast<quint32*>(raw.data()), 8);
             nodeKey = QString::fromLatin1(raw.toHex());
         }
-        qDebug() << "PokerPlugin: node mode" << (isInstanceA ? "local-A" : isInstanceB ? "local-B" : "network")
-                 << "tcpPort" << tcpPort;
+
 
         QJsonObject cfgObj;
         cfgObj["logLevel"]      = "INFO";
         cfgObj["mode"]          = "Core";
-        cfgObj["preset"]        = "logos.dev";
+        // The logos.dev fleet moved to cluster 3, but delivery_module 0.2.x still
+        // maps the "logos.dev" preset to cluster 2, so the fleet drops its nodes
+        // ("different clusterId reported: 2 vs 3") and players never meet. Spell
+        // out what the current logos.dev preset says instead (cluster 3, 8 auto
+        // shards, no RLN, same fleet nodes), which old and new builds agree on.
+        // POKER_PRESET=<name> falls back to a stock preset.
+        const QString preset = qEnvironmentVariable("POKER_PRESET").trimmed();
+        if (!preset.isEmpty()) {
+            cfgObj["preset"] = preset;
+        } else {
+            cfgObj["clusterId"]          = 3;
+            cfgObj["numShardsInNetwork"] = 8;
+            cfgObj["maxMessageSize"]     = "150KiB";
+            for (const char* fleet : {
+                     "/dns4/delivery-01.do-ams3.logos.dev.status.im/tcp/30303/p2p/16Uiu2HAmTUbnxLGT9JvV6mu9oPyDjqHK4Phs1VDJNUgESgNSkuby",
+                     "/dns4/delivery-02.do-ams3.logos.dev.status.im/tcp/30303/p2p/16Uiu2HAmMK7PYygBtKUQ8EHp7EfaD3bCEsJrkFooK8RQ2PVpJprH",
+                     "/dns4/delivery-01.gc-us-central1-a.logos.dev.status.im/tcp/30303/p2p/16Uiu2HAm4S1JYkuzDKLKQvwgAhZKs9otxXqt8SCGtB4hoJP1S397",
+                     "/dns4/delivery-02.gc-us-central1-a.logos.dev.status.im/tcp/30303/p2p/16Uiu2HAm8Y9kgBNtjxvCnf1X6gnZJW5EGE4UwwCL3CCm55TwqBiH",
+                     "/dns4/delivery-01.ac-cn-hongkong-c.logos.dev.status.im/tcp/30303/p2p/16Uiu2HAm8YokiNun9BkeA1ZRmhLbtNUvcwRr64F69tYj9fkGyuEP",
+                     "/dns4/delivery-02.ac-cn-hongkong-c.logos.dev.status.im/tcp/30303/p2p/16Uiu2HAkvwhGHKNry6LACrB8TmEFoCJKEX29XR5dDUzk3UT3UNSE" })
+                staticNodes.append(QString::fromLatin1(fleet));
+        }
         cfgObj["relay"]         = true;   // gossipsub relay — required for same-shard delivery
         cfgObj["tcpPort"]       = tcpPort;
         cfgObj["discv5UdpPort"] = udpPort;
         cfgObj["nodeKey"]       = nodeKey;
+
         if (!staticNodes.isEmpty()) cfgObj["staticNodes"] = staticNodes;
+        qDebug() << "PokerPlugin: node mode" << (isInstanceA ? "local-A" : isInstanceB ? "local-B" : "network")
+                 << "preset" << cfgObj.value("preset").toString("(explicit cluster 3)") << "tcpPort" << tcpPort;
 
         const QString cfg = QString::fromUtf8(QJsonDocument(cfgObj).toJson(QJsonDocument::Compact));
         if (!invokeBool("createNode", "createNode", cfg)) { setDeliveryStatus(3); return false; }

@@ -166,14 +166,16 @@ three steps that are easy to miss by hand:
 ## Play across computers
 
 Install the modules on each computer and open Basecamp normally. Every node
-starts with a fresh random identity and joins the `logos.dev` network, where the
-players find each other through the Logos fleet nodes. Nothing else needs
-configuring.
+starts with a fresh random identity and connects to the Logos `logos.dev` fleet
+(cluster 3), which relays the table's messages between players. Nothing else
+needs configuring.
 
-> [!NOTE]
-> Up to v0.2.0 every node used the same built-in key, so two computers showed
-> up as one libp2p peer and never saw each other. Use a build newer than v0.2.0
-> for games across computers.
+> [!IMPORTANT]
+> **Use v0.2.1 or newer on every computer.** Earlier builds can't play across
+> machines: every node used the same built-in key, and Basecamp 0.2.3's
+> delivery module still puts the `logos.dev` preset on cluster 2, which the
+> fleet (now on cluster 3) disconnects. The module now configures cluster 3
+> itself. Set `POKER_PRESET=<name>` to use a stock preset instead.
 
 ## Run two peers on one machine
 
@@ -239,7 +241,8 @@ checks that:
 | | |
 |---|---|
 | ✅ **Working** | Both modules build, install and load in Basecamp 0.2.3 (macOS arm64). Two instances connect, sit at the table and play a full hand through the encrypted shuffle, deal, betting and showdown, and agree on the winner. The offline harness passes for 2, 3 and 6 players. |
-| ⏳ **Not yet observed** | Games with three or more GUI instances, and leaving mid-hand (auto-fold). |
+| 🌐 **Across machines** | Players on different computers and networks see each other at the table through the `logos.dev` fleet (v0.2.1). |
+| ⏳ **Not yet observed** | A full hand across machines, games with three or more players, and leaving mid-hand (auto-fold). |
 
 Known limitations:
 
@@ -257,14 +260,14 @@ Known limitations:
   peer missed messages.
 - **Crypto cost.** Each player does a few hundred 2048-bit modular
   exponentiations per hand. That's fine for a demo.
-- **Games across computers are untested.** Nodes now get their own identities
-  and should meet through the `logos.dev` fleet, but a game between two
-  machines hasn't been observed yet.
+- **Hard-coded fleet settings.** Cluster 3, 8 shards and the six `logos.dev`
+  fleet nodes are written into the module, so a future fleet change needs a new
+  release (or `POKER_PRESET`).
 
 ## Lessons learned
 
 <details>
-<summary><b>Seven bugs fixed on the way here</b>, most of which apply to any Basecamp module</summary>
+<summary><b>Nine bugs fixed on the way here</b>, most of which apply to any Basecamp module</summary>
 
 <br>
 
@@ -290,6 +293,14 @@ Known limitations:
 - **Joins get lost.** A join sent before the other peer's node is up never
   arrives, so seats are re-announced every 5 s and newcomers are greeted
   immediately.
+- **One key for everyone.** A fixed node key meant for a two-instance test was
+  used by every install, so all machines were the same libp2p peer. Nodes now
+  generate a random key.
+- **Presets drift from the fleet.** The `logos.dev` fleet moved to cluster 3
+  while the delivery module bundled with Basecamp 0.2.3 still maps that preset
+  to cluster 2. The fleet disconnected every node (`different clusterId
+  reported: 2 vs 3`), so no two machines could meet. Check the cluster in the
+  logs when peers can't see each other.
 
 This is also the first module in the series to link an external library
 (OpenSSL's `libcrypto`), wired through `metadata.json`

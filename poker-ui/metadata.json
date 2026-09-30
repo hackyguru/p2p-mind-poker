@@ -1,6 +1,6 @@
 {
   "name": "poker_ui",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "type": "ui_qml",
   "category": "example",
   "description": "p2p Poker — trustless multiplayer Texas Hold'em over Logos messaging",
