@@ -1,0 +1,122 @@
+# Build portable .lgx packages of both modules on macOS (darwin-arm64) and
+# Linux (linux-amd64), merge each module's variants into one multi-platform
+# .lgx with `lgx merge`, and publish them on a GitHub release.
+#
+# Runs on a pushed `v*` tag, or by hand (workflow_dispatch) for a given tag.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to build and publish (e.g. v0.2.0)"
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  TAG: ${{ inputs.tag || github.ref_name }}
+
+jobs:
+  build:
+    name: Build (${{ matrix.variant }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: darwin-arm64
+            runner: macos-latest
+          - variant: linux-amd64
+            runner: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ env.TAG }}
+
+      # Nix + read access to the Logos binary caches (no tokens: read-only).
+      - uses: logos-co/setup-nix-cache-action@781f072122f4df6af0e33a7d355ebd20283e019e # v1.2.0
+
+      # Same guard as logos-modules-release-action: some Qt/Metal bits of the
+      # macOS build need the Metal toolchain, which runner images can lack.
+      - name: Ensure Metal Toolchain
+        if: runner.os == 'macOS'
+        run: |
+          /usr/bin/xcrun metal --version >/dev/null 2>&1 || xcodebuild -downloadComponent MetalToolchain
+
+      # Portable bundles only: the dev bundle (`lgx`) points into /nix/store
+      # and tags variants "-dev", which Basecamp rejects.
+      - name: Build core
+        working-directory: poker-core
+        run: nix build '.#lgx-portable' --out-link result-portable -L
+
+      # Build the UI against this checkout's core, not the GitHub pin.
+      - name: Build UI
+        working-directory: poker-ui
+        run: nix build --override-input poker path:../poker-core '.#lgx-portable' --out-link result-portable -L
+
+      - name: Collect
+        run: |
+          mkdir -p out
+          cp poker-core/result-portable/*.lgx out/logos-poker-module-lib-${{ matrix.variant }}.lgx
+          cp poker-ui/result-portable/*.lgx   out/logos-poker_ui-module-${{ matrix.variant }}.lgx
+          ls -la out
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: lgx-${{ matrix.variant }}
+          path: out/*.lgx
+          if-no-files-found: error
+
+  release:
+    name: Merge and publish
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ env.TAG }}
+
+      - uses: logos-co/setup-nix-cache-action@781f072122f4df6af0e33a7d355ebd20283e019e # v1.2.0
+
+      - name: Set up lgx CLI
+        run: |
+          nix build github:logos-co/logos-package#lgx --out-link "$RUNNER_TEMP/lgx-tool"
+          echo "$RUNNER_TEMP/lgx-tool/bin" >> "$GITHUB_PATH"
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: lgx-*
+          path: per-variant
+          merge-multiple: true
+
+      - name: Merge variants
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp per-variant/*.lgx dist/
+          lgx merge per-variant/logos-poker-module-lib-*.lgx -o dist/logos-poker-module-lib.lgx -y
+          lgx merge per-variant/logos-poker_ui-module-*.lgx  -o dist/logos-poker_ui-module.lgx  -y
+          for f in dist/logos-poker-module-lib.lgx dist/logos-poker_ui-module.lgx; do
+            echo "== $f"; lgx manifest "$f" --json | jq -c '{name, version, parts: (.hashes | keys)}' || true
+          done
+          (cd dist && sha256sum *.lgx > SHA256SUMS && cat SHA256SUMS)
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+          else
+            notes="release-notes/${TAG}.md"
+            if [ -f "$notes" ]; then
+              gh release create "$TAG" dist/* --title "$TAG" --notes-file "$notes" --prerelease
+            else
+              gh release create "$TAG" dist/* --title "$TAG" --generate-notes --prerelease
+            fi
+          fi
