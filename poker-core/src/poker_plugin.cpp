@@ -3,6 +3,7 @@
 #include "logos_api_client.h"
 #include "logos_object.h"
 
+#include <QDateTime>
 #include <QDebug>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -180,6 +181,13 @@ bool PokerPlugin::startDelivery()
     m_subscribed = true;
     m_started    = true;
 
+    if (!m_watchdog) {
+        m_watchdog = new QTimer(this);
+        m_watchdog->setInterval(2000);
+        connect(m_watchdog, &QTimer::timeout, this, &PokerPlugin::onWatchdog);
+    }
+    m_watchdog->start();
+
     if (m_deliveryStatus < 2) setDeliveryStatus(2);   // optimistic flip for solo runs
     return true;
 }
@@ -299,8 +307,10 @@ bool PokerPlugin::startHand()
 {
     if (!m_started) return false;
 
-    QStringList players = m_joined.keys();
-    players.sort();
+    // Only players we've heard from lately: a seat whose Basecamp has gone
+    // would be dealt in, never shuffle, and hang the hand.
+    const QStringList players = livePlayers();
+    if (!players.contains(m_myId)) return false;
     if (players.size() < 2) {
         qWarning() << "PokerPlugin: need >= 2 players to start";
         return false;
@@ -333,8 +343,9 @@ bool PokerPlugin::startHand()
     o["chips"]   = cj;
     o["button"]  = button;
 
-    publish(o);            // others adopt
-    adoptHand(o);          // adopt locally (publish self-echo is deduped)
+    const QJsonObject sent = publish(o);   // others adopt
+    adoptHand(o);                          // adopt locally (publish self-echo is deduped)
+    m_outbox.prepend(sent);                // a lost "start" hangs everyone — resend it too
     m_lastButton = button;
     return true;
 }
@@ -391,6 +402,8 @@ void PokerPlugin::onMessage(const QJsonObject& o)
     if (!mid.isEmpty()) {
         if (m_seen.contains(mid)) return;   // dedup (incl. our own echo)
         m_seen.insert(mid);
+        const QString sender = mid.left(mid.lastIndexOf(':'));
+        if (!sender.isEmpty()) m_lastHeard[sender] = QDateTime::currentMSecsSinceEpoch();
     }
 
     const QString type = o.value("type").toString();
@@ -428,6 +441,7 @@ void PokerPlugin::onMessage(const QJsonObject& o)
     }
 
     if (type == "start") {
+        if (m_pastHands.contains(o.value("handId").toString())) return;
         adoptHand(o);
         return;
     }
@@ -449,6 +463,8 @@ void PokerPlugin::onMessage(const QJsonObject& o)
 
 void PokerPlugin::ingestHandMessage(const QJsonObject& o)
 {
+    m_lastProgress = QDateTime::currentMSecsSinceEpoch();
+    m_resends      = 0;
     const QString type = o.value("type").toString();
     if (type == "shuffle") {
         m_shufflePending[o.value("step").toInt()] = jsonToDeck(o.value("deck").toArray());
@@ -477,6 +493,10 @@ void PokerPlugin::adoptHand(const QJsonObject& o)
 
     m_handId = o.value("handId").toString();
     m_pastHands.insert(m_handId);
+    m_handStartChips.clear();
+    m_notice.clear();
+    m_lastProgress = QDateTime::currentMSecsSinceEpoch();
+    m_resends      = 0;
     m_participants.clear();
     const QJsonArray pj = o.value("players").toArray();
     const QJsonArray cj = o.value("chips").toArray();
@@ -495,8 +515,11 @@ void PokerPlugin::adoptHand(const QJsonObject& o)
         m_participants.append(id);
         const QString nm = m_joined.value(id, id);
         m_table.upsertSeat(id.toStdString(), nm.toStdString());
-        if (i < cj.size())
-            m_table.setChips(id.toStdString(), static_cast<long>(cj[i].toDouble()));
+        if (i < cj.size()) {
+            const long chips = static_cast<long>(cj[i].toDouble());
+            m_table.setChips(id.toStdString(), chips);
+            m_handStartChips[id] = chips;
+        }
     }
     m_N      = m_participants.size();
     m_mySeat = m_participants.indexOf(m_myId);
@@ -528,6 +551,7 @@ void PokerPlugin::resetHandState()
 {
     m_deck.clear();
     m_keyShares.clear();
+    m_outbox.clear();
     m_shufflePending.clear();
     m_lockPending.clear();
     m_shuffleStep = 0;
@@ -852,11 +876,10 @@ QString PokerPlugin::tableState()
     st["myName"]  = m_myName;
     st["joined"]  = m_joined.contains(m_myId);
     st["leaving"] = m_leaving;
-    st["players"] = m_joined.size();
-
-    QStringList sorted = m_joined.keys();
-    sorted.sort();
-    st["isCoordinator"] = (!sorted.isEmpty() && sorted.first() == m_myId);
+    const QStringList live = livePlayers();
+    st["players"] = live.size();
+    st["isCoordinator"] = (!live.isEmpty() && live.first() == m_myId && m_joined.contains(m_myId));
+    st["notice"]  = m_notice;
 
     const char* protoNames[] = { "lobby", "shuffle", "lock", "deal", "play", "done" };
     st["proto"] = QString::fromLatin1(protoNames[static_cast<int>(m_proto)]);
@@ -940,12 +963,23 @@ QString PokerPlugin::midNext()
     return m_myId + ":" + QString::number(++m_seq);
 }
 
-void PokerPlugin::publish(QJsonObject obj)
+QJsonObject PokerPlugin::publish(QJsonObject obj)
 {
     const QString mid = midNext();
     obj["mid"] = mid;
     m_seen.insert(mid);   // pre-mark so our own gossipsub echo is ignored
 
+    if (midHand() && !m_handId.isEmpty() && obj.value("handId").toString() == m_handId) {
+        m_outbox.append(obj);
+        m_lastProgress = QDateTime::currentMSecsSinceEpoch();
+        m_resends      = 0;
+    }
+    republish(obj);
+    return obj;
+}
+
+void PokerPlugin::republish(const QJsonObject& obj)
+{
     const QString payload = QString::fromUtf8(QJsonDocument(obj).toJson(QJsonDocument::Compact));
 
     // Defer the send: publish() is frequently called from inside the
@@ -955,6 +989,70 @@ void PokerPlugin::publish(QJsonObject obj)
         if (m_deliveryClient)
             m_deliveryClient->invokeRemoteMethod("delivery_module", "send", TOPIC, payload);
     });
+}
+
+QStringList PokerPlugin::livePlayers() const
+{
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    QStringList out;
+    for (auto it = m_joined.cbegin(); it != m_joined.cend(); ++it)
+        if (it.key() == m_myId || now - m_lastHeard.value(it.key(), 0) <= 15000)
+            out << it.key();
+    out.sort();
+    return out;
+}
+
+void PokerPlugin::onWatchdog()
+{
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+
+    // Seats re-announce every 5 s; one silent for 30 s has quit Basecamp.
+    QStringList gone;
+    for (auto it = m_joined.cbegin(); it != m_joined.cend(); ++it)
+        if (it.key() != m_myId && now - m_lastHeard.value(it.key(), 0) > 30000) gone << it.key();
+    for (const QString& id : gone) {
+        m_joined.remove(id);
+        if (!midHand()) m_table.removeSeat(id.toStdString());
+    }
+    if (!gone.isEmpty()) emit eventResponse("tableChanged", {});
+
+    if (!midHand()) return;
+    const qint64 idle = now - m_lastProgress;
+
+    // Relay drops messages now and then and never redelivers. When the hand
+    // stops moving, resend everything we sent for it (same mids, so peers that
+    // already have them ignore them). A few tries per stall is enough.
+    if (idle > 4000 && m_resends < 3 && now - m_lastResend > 5000 && !m_outbox.isEmpty()) {
+        for (const QJsonObject& o : m_outbox) republish(o);
+        m_lastResend = now;
+        ++m_resends;
+    }
+
+    // Give up on a dead hand. The shuffle and lock run by themselves, so a
+    // minute without progress means a message is gone for good; betting waits
+    // on people, so allow longer unless one of them has stopped answering.
+    bool participantGone = false;
+    for (const QString& id : m_participants)
+        if (id != m_myId && now - m_lastHeard.value(id, 0) > 30000) participantGone = true;
+    const qint64 limit = participantGone ? 30000
+                       : (m_proto == Proto::Play ? 180000 : 60000);
+    if (idle > limit)
+        abortHand(participantGone ? "Hand abandoned: a player stopped responding. Chips returned."
+                                  : "Hand abandoned: it stopped progressing. Chips returned.");
+}
+
+void PokerPlugin::abortHand(const QString& why)
+{
+    qWarning() << "PokerPlugin:" << why << m_handId;
+    for (auto it = m_handStartChips.cbegin(); it != m_handStartChips.cend(); ++it)
+        m_table.setChips(it.key().toStdString(), it.value());
+    m_table.cancelHand();
+    m_proto          = Proto::Lobby;
+    m_haveLastWinner = false;
+    m_notice         = why;
+    m_outbox.clear();
+    onHandFinished();
+    emit eventResponse("tableChanged", {});
 }
 
 void PokerPlugin::sendKey(int pos)

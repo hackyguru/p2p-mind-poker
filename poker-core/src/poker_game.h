@@ -73,6 +73,7 @@ public:
     void advanceStreet();                             // Preflop→Flop→…→Showdown
     std::vector<int> showdownWinners() const;         // needs 5 board + revealed holes
     void endHand(const std::vector<int>& winners);    // collect pot, pay winners, HandOver
+    void cancelHand();                                // drop the hand: no pot, no bets, Idle
 
     int nextButton() const;                           // rotate to next funded seat
 

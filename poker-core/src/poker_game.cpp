@@ -293,6 +293,24 @@ void PokerTable::endHand(const std::vector<int>& winners)
     m_phase = Phase::HandOver;
 }
 
+void PokerTable::cancelHand()
+{
+    for (Seat& s : m_seats) {
+        s.committed = 0;
+        s.inHand    = false;
+        s.folded    = false;
+        s.allIn     = false;
+        s.acted     = false;
+        s.hole0     = -1;
+        s.hole1     = -1;
+    }
+    m_board.clear();
+    m_pot        = 0;
+    m_currentBet = 0;
+    m_toAct      = -1;
+    m_phase      = Phase::Idle;
+}
+
 int PokerTable::nextButton() const
 {
     const int n = seatCount();

@@ -453,6 +453,7 @@ Item {
                         var p = root.protoLabel(st.proto)
                         if (p) return "🔐 " + p
                         if (!st.proto || st.proto === "lobby") {
+                            if (st.notice) return "⚠ " + st.notice
                             if ((st.status || 0) === 0) return "Start the network, then join the table"
                             if (!(st.joined === true)) return "Enter a name and join the table"
                             if ((st.players || 0) < 2) return "Waiting for another player…"

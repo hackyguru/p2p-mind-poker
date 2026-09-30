@@ -6,6 +6,7 @@
 #include <QString>
 #include <QStringList>
 #include <QMap>
+#include <QHash>
 #include <QSet>
 #include <QVariant>
 #include <QJsonObject>
@@ -99,7 +100,11 @@ private:
     std::vector<int> stagePositions(int stage) const;
 
     // ── messaging helpers ──
-    void    publish(QJsonObject obj);      // stamps mid, dedups self-echo, defers send
+    QJsonObject publish(QJsonObject obj);  // stamps mid, dedups self-echo, defers send; returns what was sent
+    void    republish(const QJsonObject& stamped);   // resend as-is (same mid, so receivers dedup)
+    void    onWatchdog();                  // resend when a hand stalls, abandon it when it's dead; prune silent seats
+    void    abortHand(const QString& why); // refund to the start-of-hand stacks and return to the lobby
+    QStringList livePlayers() const;       // joined and heard from recently (sorted)
     void    sendKey(int pos);
     void    announceJoin();                // (re)broadcast our seat — joins are fire-and-forget
     void    finishLeave();                 // broadcast "leave" and drop our seat
@@ -131,6 +136,9 @@ private:
     QSet<QString>    m_seen;            // seen message ids (dedup)
     QMap<QString, QString> m_joined;    // id -> display name
     QTimer*          m_announceTimer = nullptr;  // periodic join re-broadcast
+    QTimer*          m_watchdog      = nullptr;  // stall detection + seat liveness
+    QHash<QString, qint64> m_lastHeard;          // id -> ms of its last message
+    QString          m_notice;                   // shown in the lobby, e.g. why a hand was abandoned
     bool             m_leaving       = false;    // left mid-hand; auto-folding until it ends
     QMap<QString, quint64> m_leftAt;              // id -> seq of its last "leave"
 
@@ -140,6 +148,11 @@ private:
     QString                        m_handId;
     QSet<QString>                  m_pastHands;      // hands already adopted
     QList<QJsonObject>             m_early;          // messages that overtook their "start"
+    QList<QJsonObject>             m_outbox;         // everything we sent for this hand, for resends
+    QMap<QString, long>            m_handStartChips; // stacks from the start message, for refunds
+    qint64                         m_lastProgress = 0;
+    qint64                         m_lastResend   = 0;
+    int                            m_resends      = 0;  // resends since the last progress
     QStringList                    m_participants;   // crypto seat order (== table seat order)
     int                            m_N      = 0;
     int                            m_mySeat = -1;    // my index in m_participants, -1 = spectator

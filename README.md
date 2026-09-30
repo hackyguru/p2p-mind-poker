@@ -250,9 +250,12 @@ Known limitations:
   player from fixing the deal, but a malicious peer could still submit a bad
   shuffle. The model assumes honest-but-curious peers who follow the protocol.
   A production version would need a verifiable shuffle.
-- **No recovery from lost messages or dropped players.** If a message is lost or
-  a peer quits Basecamp mid-hand, the hand stalls. There are no timeouts or
-  resends yet. (Pressing **Leave table** is safe: it folds you out first.)
+- **Recovery from lost messages is basic.** When a hand stops moving, every
+  player re-sends what they sent for it (up to 3 times). If that doesn't unstick
+  it, the hand is abandoned and all stacks go back to where they started: after
+  60 s during the shuffle, 30 s if a player stops responding, or 3 min during
+  betting. Only players heard from in the last 15 s are dealt in, and silent
+  seats are dropped after 30 s.
 - **Simplified betting.** One main pot and no side pots. A short stack goes
   all-in and stays eligible for the whole pot. Blinds are fixed at 5/10 and the
   button rotates.
@@ -287,9 +290,11 @@ Known limitations:
 - **delivery_module 0.2.0 and later sends payloads as raw bytes, not base64.**
   Decoding them as base64 produced garbage and every message was silently
   dropped. The handler now accepts raw bytes and falls back to base64.
-- **Relay doesn't preserve order.** A 27 KB shuffle message overtook the small
-  `start` before it and was discarded, which hung the table on "Shuffling deck".
-  Messages for a hand that hasn't started yet are now held and replayed.
+- **Relay doesn't preserve order, or delivery.** A 27 KB shuffle message
+  overtook the small `start` before it and was discarded, which hung the table
+  on "Shuffling deck". Messages for a hand that hasn't started yet are now held
+  and replayed. Across machines a `start` was lost outright, so stalled hands now
+  resend their messages and, as a last resort, are abandoned with a refund.
 - **Joins get lost.** A join sent before the other peer's node is up never
   arrives, so seats are re-announced every 5 s and newcomers are greeted
   immediately.

@@ -1,6 +1,6 @@
 {
   "name": "poker",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "type": "core",
   "category": "example",
   "description": "Trustless multiplayer Texas Hold'em over logos-delivery using mental-poker (SRA) card encryption",
