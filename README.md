@@ -11,7 +11,7 @@ A community-built, **unofficial** [Logos Basecamp](https://logos.co) module that
 cards stay secret and nobody controls the shuffle.
 
 ![Basecamp](https://img.shields.io/badge/Logos%20Basecamp-0.2.3-2e7d5b)
-![Platform](https://img.shields.io/badge/platform-macOS%20arm64-lightgrey)
+![Platform](https://img.shields.io/badge/platform-macOS%20arm64%20%7C%20Linux%20x86__64-lightgrey)
 ![Status](https://img.shields.io/badge/status-experimental-orange)
 ![Unofficial](https://img.shields.io/badge/module-unofficial-red)
 ![Chips](https://img.shields.io/badge/chips-play%20money%20only-blue)
@@ -103,8 +103,14 @@ cryptographic privilege.
 
 ## Quick start
 
-Needs [Nix](https://nixos.org) with flakes, and Logos Basecamp 0.2.3 on an
-Apple Silicon Mac.
+**Download:** grab `logos-poker-module-lib.lgx` and `logos-poker_ui-module.lgx`
+from the [latest release](https://github.com/hackyguru/p2p-mind-poker/releases/latest).
+Each one holds both macOS (Apple Silicon) and Linux (x86_64) builds. In
+Basecamp, open **Modules → Install LGX Package** and install the core first,
+then the UI.
+
+**Build it yourself:** needs [Nix](https://nixos.org) with flakes, and Logos
+Basecamp 0.2.3. `install.sh` targets an Apple Silicon Mac.
 
 ```bash
 git clone https://github.com/hackyguru/p2p-mind-poker.git
