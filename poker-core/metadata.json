@@ -1,0 +1,23 @@
+{
+  "name": "poker",
+  "version": "0.1.0",
+  "type": "core",
+  "category": "example",
+  "description": "Trustless multiplayer Texas Hold'em over logos-delivery using mental-poker (SRA) card encryption",
+  "main": "poker_plugin",
+  "dependencies": ["delivery_module"],
+
+  "nix": {
+    "packages": {
+      "build": [],
+      "runtime": ["openssl"]
+    },
+    "external_libraries": [],
+    "cmake": {
+      "find_packages": ["OpenSSL"],
+      "extra_sources": [],
+      "extra_include_dirs": [],
+      "extra_link_libraries": ["OpenSSL::Crypto"]
+    }
+  }
+}
