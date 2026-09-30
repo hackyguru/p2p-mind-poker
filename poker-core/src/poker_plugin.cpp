@@ -9,6 +9,7 @@
 #include <QJsonDocument>
 #include <QJsonParseError>
 #include <QRandomGenerator>
+#include <QSettings>
 #include <QTimer>
 #include <QUuid>
 
@@ -104,11 +105,20 @@ bool PokerPlugin::startDelivery()
             staticNodes.append(QString("/ip4/127.0.0.1/tcp/60000/p2p/%1").arg(PEERID_A));
         } else {
             // A shared fixed key made every machine the same libp2p peer, so the
-            // fleet couldn't route between them. 256 random bits is a valid
-            // secp256k1 secret with overwhelming probability.
-            QByteArray raw(32, Qt::Uninitialized);
-            QRandomGenerator::system()->fillRange(reinterpret_cast<quint32*>(raw.data()), 8);
-            nodeKey = QString::fromLatin1(raw.toHex());
+            // fleet couldn't route between them. Generate one per install (256
+            // random bits is a valid secp256k1 secret with overwhelming
+            // probability) and keep it, per port: a fresh identity on every
+            // launch piles up connections from one IP at the fleet nodes until
+            // they start refusing that IP.
+            QSettings settings(QStringLiteral("p2p-mind-poker"), QStringLiteral("poker"));
+            const QString keyName = QStringLiteral("nodeKey/%1").arg(tcpPort);
+            nodeKey = settings.value(keyName).toString();
+            if (nodeKey.size() != 64) {
+                QByteArray raw(32, Qt::Uninitialized);
+                QRandomGenerator::system()->fillRange(reinterpret_cast<quint32*>(raw.data()), 8);
+                nodeKey = QString::fromLatin1(raw.toHex());
+                settings.setValue(keyName, nodeKey);
+            }
         }
 
 
